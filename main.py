@@ -1,60 +1,62 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Path
-from src.model import ResponsCost, CreatCost, EditCost
+from sqlalchemy.orm import Session
+from src.database import get_db
+from src.schemas import ResponseCost, CreateCost
+from src import crud
+
 app = FastAPI(title="Cost Management")
 
-
-db = {}
-count_id = 1
-
-def get_cost_or_error(id: int) -> ResponsCost:
-    if id in db.keys():
-        return db[id]
-
-    raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Cost with ID {id} not found"
-        )
-    
-    
+        
 
 @app.get("/")
 def root():
     return {"msg": "Welcome"}
 
-@app.post("/cost", status_code=status.HTTP_201_CREATED, tags=["Cost"])
-def creat_cost(cost: CreatCost):
-    global count_id
+@app.post("/cost", response_model=ResponseCost ,status_code=status.HTTP_201_CREATED, tags=["Cost"])
+def creat_cost(cost: CreateCost, db: Session = Depends(get_db)):
 
-    now_cost = ResponsCost(id = count_id, **cost.model_dump())
-    db[count_id] = now_cost
-    count_id += 1
-    return now_cost
-
-@app.get("/costs", response_model=list[ResponsCost], tags=["Cost"])
-def get_costs():
-    return list(db.values())
+    cost = crud.add_cost(cost, db)
+    return cost
 
 
-@app.get("/cost/{id}", response_model=ResponsCost, tags=["Cost"])
+@app.get("/costs", response_model=list[ResponseCost], tags=["Cost"])
+def get_costs(db: Session = Depends(get_db)):
+    costs = crud.get_costs(db)
+    return costs
+
+
+@app.get("/cost/{id}", response_model=ResponseCost, tags=["Cost"])
 def get_cost(
-    id:int = Path(gt=0, description="Cost id"),
-    cost: ResponsCost = Depends(get_cost_or_error)):
+    id: int = Path(gt=0, description="Cost id"),
+    db: Session = Depends(get_db)):
 
+    cost = crud.get_cost(id, db)
     return cost
 
-@app.put("/cost/{id}", response_model=ResponsCost, tags=["Cost"])
+
+@app.put("/cost/{id}", response_model=ResponseCost, tags=["Cost"])
 def edit_cost(
-    id:int = Path(gt=0, description="Cost id"),
-    now_cost: EditCost = ...,
-    old_cost: ResponsCost = Depends(get_cost_or_error)):
+    now_cost: CreateCost,
+    db: Session = Depends(get_db),
+    id:int = Path(gt=0, description="Cost id")):
 
-    cost = ResponsCost(id=old_cost.id, **now_cost.model_dump())
-    db[id] = cost
+    cost = crud.edit_cost(id, now_cost, db)
+    if not cost:
+        raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cost with this {id}  not found.")
+    
     return cost
+    
 
 @app.delete("/cost/{id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Cost"])
 def delete_cost(
     id:int = Path(gt=0, description="Cost id"),
-    cost=Depends(get_cost_or_error)):
+    db: Session = Depends(get_db)):
 
-    db.pop(id)
+    cost = crud.delete_cost(id, db)
+
+    if not cost:
+        raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cost with this {id}  not found.")
